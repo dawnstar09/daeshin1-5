@@ -29,6 +29,103 @@
             box-shadow: 0 4px 16px rgba(56,189,248,0.08);
             transition: all 0.3s ease;
             position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 중식 제목 스타일 통일 */
+        .lunch-title {
+            color: #1f2937;
+            margin: 1rem 0 2rem 0;
+            font-size: 2.2rem;
+            text-align: center;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+
+        /* 석식 이미지 스타일 - 깔끔한 UI */
+        .dinner-section {
+            margin-top: 4rem;
+            text-align: center;
+            padding: 3rem 1rem;
+            width: 100%;
+            background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
+            border-radius: 2rem;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        }
+
+        .dinner-title {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 2rem;
+            text-shadow: none;
+            letter-spacing: -0.5px;
+        }
+
+        .dinner-image {
+            width: 85%;
+            max-width: 800px;
+            height: auto;
+            border-radius: 1.5rem;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            border: 3px solid #ffffff;
+        }
+
+        .dinner-image:hover {
+            transform: translateY(-8px) scale(1.02);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.18);
+            border-color: #e5e7eb;
+        }
+
+        /* 완전한 반응형 디자인 */
+        @media (max-width: 1200px) {
+            .dinner-image {
+                width: 90%;
+                max-width: 700px;
+            }
+            .dinner-title, .lunch-title {
+                font-size: 2rem;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .dinner-section {
+                margin-top: 3rem;
+                padding: 2rem 1rem;
+                border-radius: 1.5rem;
+            }
+            .dinner-image {
+                width: 95%;
+                max-width: 600px;
+                border-radius: 1rem;
+            }
+            .dinner-title, .lunch-title {
+                font-size: 1.8rem;
+                margin-bottom: 1.5rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .dinner-section {
+                margin-top: 2rem;
+                padding: 1.5rem 0.5rem;
+                border-radius: 1rem;
+            }
+            .dinner-image {
+                width: 98%;
+                border-radius: 0.8rem;
+                border-width: 2px;
+            }
+            .dinner-title, .lunch-title {
+                font-size: 1.5rem;
+                margin-bottom: 1rem;
+            }
+            .dinner-image:hover {
+                transform: translateY(-4px) scale(1.01);
+            }
         }
 
         .meal-day:hover {
@@ -177,8 +274,15 @@
 
     <div class="meal-container">
         <h2>🍽️ 이번 주 급식 메뉴</h2>
+        <h3 class="lunch-title">🍚 중식</h3>
         <div id="mealContent" class="loading">
             급식 메뉴를 불러오는 중...
+        </div>
+        
+        <!-- 석식 이미지 섹션 (화면 하단 꽉 차게) -->
+        <div class="dinner-section">
+            <div class="dinner-title">🍽️ 석식</div>
+            <img src="../images/suksik.png" alt="석식" class="dinner-image">
         </div>
     </div>
 
@@ -218,9 +322,21 @@
                         ${dayData.day}<br>
                         <small>${dayData.date}</small>
                     </div>
-                    <ul class="meal-menu">
-                        ${dayData.menu.map(item => `<li>${item}</li>`).join('')}
-                    </ul>
+                    
+                    <!-- 중식 섹션 -->
+                    <div class="lunch-section">
+                        <h4 style="color: #2563eb; margin-bottom: 0.5rem; font-size: 1.1rem;">🍚 중식</h4>
+                        <ul class="meal-menu">
+                            ${dayData.menu.map(item => `<li>${item}</li>`).join('')}
+                        </ul>
+                    </div>
+                    
+                    <!-- 석식 섹션 -->
+                    <div class="dinner-section">
+                        <div class="dinner-title">🍽️ 석식</div>
+                        <img src="../images/suksik.png" alt="석식" class="dinner-image">
+                    </div>
+                    
                     <div class="meal-calories">
                         ${dayData.calories}
                     </div>

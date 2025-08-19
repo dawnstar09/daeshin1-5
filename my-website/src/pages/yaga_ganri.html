@@ -1090,6 +1090,7 @@
             await loadStudentData();
             updateDateTime();
             renderUI();
+            setupAutoComplete();
             
             // 매분마다 시간 업데이트
             setInterval(() => {
@@ -1107,6 +1108,39 @@
                         updateCount(i);
                     }
                     updatePeriodStatus();
+                }
+            });
+        }
+
+        // 자동 완성 기능 설정
+        function setupAutoComplete() {
+            const codeInput = document.getElementById('mainCode');
+            const nameInput = document.getElementById('mainName');
+            
+            if (!codeInput || !nameInput) return;
+            
+            // 학생코드 입력 시 자동으로 이름 채우기
+            codeInput.addEventListener('input', function() {
+                const code = this.value.trim();
+                if (studentData[code]) {
+                    nameInput.value = studentData[code].name;
+                    nameInput.style.backgroundColor = '#f0f9ff';
+                    nameInput.style.borderColor = '#3b82f6';
+                } else {
+                    nameInput.value = '';
+                    nameInput.style.backgroundColor = '';
+                    nameInput.style.borderColor = '';
+                }
+            });
+
+            // 이름 입력 시 학생코드와 일치하는지 확인
+            nameInput.addEventListener('blur', function() {
+                const name = this.value.trim();
+                const code = codeInput.value.trim();
+                
+                if (code && studentData[code] && studentData[code].name !== name) {
+                    alert(`입력한 이름과 학생코드가 일치하지 않습니다.\n학생코드 ${code}의 이름: ${studentData[code].name}`);
+                    this.focus();
                 }
             });
         }

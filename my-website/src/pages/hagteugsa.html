@@ -572,6 +572,7 @@
             // 학생 데이터와 학특사 목록 로드
             loadStudentData();
             loadHagteugsaList();
+            setupAutoComplete();
 
             // 모달 열기/닫기
             document.getElementById('addBtn').onclick = () => {
@@ -618,6 +619,37 @@
                 });
             };
         });
+
+        // 자동 완성 기능 설정
+        function setupAutoComplete() {
+            const creatorCodeInput = document.getElementById('creatorCodeInput');
+            const creatorInput = document.getElementById('creatorInput');
+            
+            // 학생코드 입력 시 자동으로 이름 채우기
+            creatorCodeInput.addEventListener('input', function() {
+                const code = this.value.trim();
+                if (studentData[code]) {
+                    creatorInput.value = studentData[code].name;
+                    creatorInput.style.backgroundColor = '#f0f9ff';
+                    creatorInput.style.borderColor = '#3b82f6';
+                } else {
+                    creatorInput.value = '';
+                    creatorInput.style.backgroundColor = '';
+                    creatorInput.style.borderColor = '';
+                }
+            });
+
+            // 이름 입력 시 학생코드와 일치하는지 확인
+            creatorInput.addEventListener('blur', function() {
+                const name = this.value.trim();
+                const code = creatorCodeInput.value.trim();
+                
+                if (code && studentData[code] && studentData[code].name !== name) {
+                    alert(`입력한 이름과 학생코드가 일치하지 않습니다.\n학생코드 ${code}의 이름: ${studentData[code].name}`);
+                    this.focus();
+                }
+            });
+        }
     </script>
 
     <!-- 홈 버튼과 문의 버튼 -->

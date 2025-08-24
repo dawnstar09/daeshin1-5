@@ -1,4 +1,13 @@
-from supabase import create_client, Client
+try:
+    from supabase import create_client, Client
+except ImportError:
+    try:
+        from supabase_py import create_client, Client
+    except ImportError:
+        print("Warning: Supabase module not found. Using SQLite fallback.")
+        create_client = None
+        Client = None
+
 from config import Config
 import logging
 
@@ -8,6 +17,11 @@ logger = logging.getLogger(__name__)
 
 class DatabaseManager:
     def __init__(self):
+        if create_client is None:
+            logger.warning("Supabase module not available. Using SQLite fallback.")
+            self.supabase = None
+            return
+            
         try:
             self.supabase: Client = create_client(Config.SUPABASE_URL, Config.SUPABASE_KEY)
             logger.info("Supabase 연결 성공")

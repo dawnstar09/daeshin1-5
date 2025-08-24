@@ -16,6 +16,158 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class DatabaseManager:
+    def create_hagteugsa(self, title, description, max_members, creator_name, creator_code):
+        """학특사 생성 및 첫 멤버 추가"""
+        if not self.is_connected():
+            return {'success': False, 'msg': '데이터베이스 연결 실패'}
+        try:
+            # 학특사 생성
+            data = {
+                'title': title,
+                'description': description,
+                'max_members': max_members,
+                'creator_name': creator_name,
+                'creator_code': creator_code
+            }
+            response = self.supabase.table('hagteugsa').insert(data).execute()
+            hagteugsa_id = response.data[0]['id']
+            # 생성자를 첫 번째 멤버로 추가
+            member_data = {
+                'hagteugsa_id': hagteugsa_id,
+                'member_name': creator_name,
+                'member_code': creator_code
+            }
+            self.supabase.table('hagteugsa_members').insert(member_data).execute()
+            return {'success': True, 'id': hagteugsa_id}
+        except Exception as e:
+            logger.error(f"학특사 생성 실패: {e}")
+            return {'success': False, 'msg': str(e)}
+
+    def get_hagteugsa_list(self):
+        """학특사 목록 및 멤버 조회"""
+        if not self.is_connected():
+            return {'success': False, 'msg': '데이터베이스 연결 실패'}
+        try:
+            hagteugsa_resp = self.supabase.table('hagteugsa').select('*').order('created_at', desc=True).execute()
+            members_resp = self.supabase.table('hagteugsa_members').select('*').execute()
+            members_by_group = {}
+            for m in members_resp.data:
+                members_by_group.setdefault(m['hagteugsa_id'], []).append(m['member_name'])
+            hagteugsa_list = []
+            for h in hagteugsa_resp.data:
+                hagteugsa_list.append({
+                    'id': h['id'],
+                    'title': h['title'],
+                    'description': h['description'],
+                    'max_members': h['max_members'],
+                    'creator_name': h['creator_name'],
+                    'current_members': len(members_by_group.get(h['id'], [])),
+                    'members': members_by_group.get(h['id'], [])
+                })
+            return {'success': True, 'data': hagteugsa_list}
+        except Exception as e:
+            logger.error(f"학특사 목록 조회 실패: {e}")
+            return {'success': False, 'msg': str(e)}
+
+    def join_hagteugsa(self, hagteugsa_id, member_name, member_code):
+        """학특사 참여"""
+        if not self.is_connected():
+            return {'success': False, 'msg': '데이터베이스 연결 실패'}
+        try:
+            # 최대 인원 확인
+            hagteugsa = self.supabase.table('hagteugsa').select('max_members').eq('id', hagteugsa_id).single().execute()
+            if not hagteugsa.data:
+                return {'success': False, 'msg': '존재하지 않는 학특사입니다.'}
+            max_members = hagteugsa.data['max_members']
+            # 현재 인원 확인
+            members = self.supabase.table('hagteugsa_members').select('id').eq('hagteugsa_id', hagteugsa_id).execute()
+            if len(members.data) >= int(max_members):
+                return {'success': False, 'msg': '모집이 마감되었습니다!'}
+            # 중복 참여 확인
+            exists = self.supabase.table('hagteugsa_members').select('id').eq('hagteugsa_id', hagteugsa_id).eq('member_name', member_name).execute()
+            if exists.data:
+                return {'success': False, 'msg': '이미 참여하셨습니다!'}
+            # 참여자 추가
+            member_data = {
+                'hagteugsa_id': hagteugsa_id,
+                'member_name': member_name,
+                'member_code': member_code
+            }
+            self.supabase.table('hagteugsa_members').insert(member_data).execute()
+            return {'success': True}
+        except Exception as e:
+            logger.error(f"학특사 참여 실패: {e}")
+            return {'success': False, 'msg': str(e)}
+
+    def delete_hagteugsa(self, hagteugsa_id):
+        """학특사 및 멤버 삭제"""
+        if not self.is_connected():
+            return {'success': False, 'msg': '데이터베이스 연결 실패'}
+        try:
+            # 멤버 먼저 삭제
+            self.supabase.table('hagteugsa_members').delete().eq('hagteugsa_id', hagteugsa_id).execute()
+            # 학특사 삭제
+            resp = self.supabase.table('hagteugsa').delete().eq('id', hagteugsa_id).execute()
+            if not resp.data:
+                return {'success': False, 'msg': '해당 학특사를 찾을 수 없습니다.'}
+            return {'success': True}
+        except Exception as e:
+            logger.error(f"학특사 삭제 실패: {e}")
+            return {'success': False, 'msg': str(e)}
+    def add_suhang(self, subject, title, deadline, description, creator_name, creator_code):
+        """수행평가를 추가합니다."""
+        if not self.is_connected():
+            return {'success': False, 'msg': '데이터베이스 연결 실패'}
+        try:
+            data = {
+                'subject': subject,
+                'title': title,
+                'deadline': deadline,
+                'description': description,
+                'creator_name': creator_name,
+                'creator_code': creator_code
+            }
+            self.supabase.table('suhang').insert(data).execute()
+            return {'success': True, 'msg': '수행평가가 성공적으로 추가되었습니다.'}
+        except Exception as e:
+            logger.error(f"수행평가 추가 실패: {e}")
+            return {'success': False, 'msg': str(e)}
+
+    def get_suhang_list(self):
+        """수행평가 목록을 조회합니다."""
+        if not self.is_connected():
+            return {'success': False, 'msg': '데이터베이스 연결 실패'}
+        try:
+            response = self.supabase.table('suhang').select('*').order('deadline').execute()
+            suhang_list = []
+            for row in response.data:
+                suhang_list.append({
+                    'id': row['id'],
+                    'subject': row['subject'],
+                    'title': row['title'],
+                    'deadline': row['deadline'],
+                    'description': row['description'],
+                    'creator_name': row['creator_name'],
+                    'creator_code': row['creator_code'],
+                    'created_at': row.get('created_at')
+                })
+            return {'success': True, 'data': suhang_list}
+        except Exception as e:
+            logger.error(f"수행평가 목록 조회 실패: {e}")
+            return {'success': False, 'msg': str(e)}
+
+    def delete_suhang(self, suhang_id):
+        """수행평가를 삭제합니다."""
+        if not self.is_connected():
+            return {'success': False, 'msg': '데이터베이스 연결 실패'}
+        try:
+            response = self.supabase.table('suhang').delete().eq('id', suhang_id).execute()
+            if not response.data:
+                return {'success': False, 'msg': '해당 수행평가를 찾을 수 없습니다.'}
+            return {'success': True, 'msg': '수행평가가 성공적으로 삭제되었습니다.'}
+        except Exception as e:
+            logger.error(f"수행평가 삭제 실패: {e}")
+            return {'success': False, 'msg': str(e)}
     def __init__(self):
         if create_client is None:
             logger.warning("Supabase module not available. Using SQLite fallback.")

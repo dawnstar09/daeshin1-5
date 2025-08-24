@@ -301,28 +301,25 @@ def create_hagteugsa():
         max_members = data.get('max_members')
         creator_name = data.get('creator_name')
         creator_code = data.get('creator_code')
-        
         if not all([title, description, max_members, creator_name, creator_code]):
             return {'success': False, 'msg': '모든 필드를 입력하세요.'}, 400
-        
+        # Supabase에 먼저 시도
+        if db_manager.is_connected():
+            result = db_manager.create_hagteugsa(title, description, max_members, creator_name, creator_code)
+            if result['success']:
+                return result
+        # Supabase 실패 시 SQLite 사용
         conn = sqlite3.connect('users.db')
         c = conn.cursor()
-        
-        # 학특사 생성
         c.execute('''INSERT INTO hagteugsa (title, description, max_members, creator_name, creator_code)
                      VALUES (?, ?, ?, ?, ?)''',
                   (title, description, max_members, creator_name, creator_code))
-        
         hagteugsa_id = c.lastrowid
-        
-        # 생성자를 첫 번째 멤버로 추가
         c.execute('''INSERT INTO hagteugsa_members (hagteugsa_id, member_name, member_code)
                      VALUES (?, ?, ?)''',
                   (hagteugsa_id, creator_name, creator_code))
-        
         conn.commit()
         conn.close()
-        
         return {'success': True, 'id': hagteugsa_id}
     except Exception as e:
         return {'success': False, 'msg': str(e)}, 500
@@ -331,26 +328,26 @@ def create_hagteugsa():
 @app.route('/api/hagteugsa/list')
 def get_hagteugsa_list():
     try:
+        # Supabase에 먼저 시도
+        if db_manager.is_connected():
+            result = db_manager.get_hagteugsa_list()
+            if result['success']:
+                return result
+        # Supabase 실패 시 SQLite 사용
         conn = sqlite3.connect('users.db')
         c = conn.cursor()
-        
-        # 학특사 목록과 각각의 멤버 수 조회
         c.execute('''SELECT h.id, h.title, h.description, h.max_members, h.creator_name,
                             COUNT(hm.id) as current_members
                      FROM hagteugsa h
                      LEFT JOIN hagteugsa_members hm ON h.id = hm.hagteugsa_id
                      GROUP BY h.id
                      ORDER BY h.created_at DESC''')
-        
         rows = c.fetchall()
-        
         hagteugsa_list = []
         for row in rows:
-            # 각 학특사의 멤버 목록 조회
             c.execute('''SELECT member_name FROM hagteugsa_members 
                          WHERE hagteugsa_id = ? ORDER BY joined_at''', (row[0],))
             members = [member[0] for member in c.fetchall()]
-            
             hagteugsa_list.append({
                 'id': row[0],
                 'title': row[1],
@@ -360,7 +357,6 @@ def get_hagteugsa_list():
                 'current_members': row[5],
                 'members': members
             })
-        
         conn.close()
         return {'success': True, 'data': hagteugsa_list}
     except Exception as e:
@@ -374,43 +370,36 @@ def join_hagteugsa():
         hagteugsa_id = data.get('hagteugsa_id')
         member_name = data.get('member_name')
         member_code = data.get('member_code')
-        
         if not all([hagteugsa_id, member_name, member_code]):
             return {'success': False, 'msg': '모든 필드를 입력하세요.'}, 400
-        
+        # Supabase에 먼저 시도
+        if db_manager.is_connected():
+            result = db_manager.join_hagteugsa(hagteugsa_id, member_name, member_code)
+            if result['success']:
+                return result
+        # Supabase 실패 시 SQLite 사용
         conn = sqlite3.connect('users.db')
         c = conn.cursor()
-        
-        # 학특사 정보 조회
         c.execute('SELECT max_members FROM hagteugsa WHERE id = ?', (hagteugsa_id,))
         hagteugsa = c.fetchone()
         if not hagteugsa:
             conn.close()
             return {'success': False, 'msg': '존재하지 않는 학특사입니다.'}, 404
-        
-        # 현재 참여자 수 확인
         c.execute('SELECT COUNT(*) FROM hagteugsa_members WHERE hagteugsa_id = ?', (hagteugsa_id,))
         current_count = c.fetchone()[0]
-        
         if current_count >= hagteugsa[0]:
             conn.close()
             return {'success': False, 'msg': '모집이 마감되었습니다!'}, 400
-        
-        # 이미 참여했는지 확인
         c.execute('SELECT id FROM hagteugsa_members WHERE hagteugsa_id = ? AND member_name = ?', 
                   (hagteugsa_id, member_name))
         if c.fetchone():
             conn.close()
             return {'success': False, 'msg': '이미 참여하셨습니다!'}, 400
-        
-        # 참여자 추가
         c.execute('''INSERT INTO hagteugsa_members (hagteugsa_id, member_name, member_code)
                      VALUES (?, ?, ?)''',
                   (hagteugsa_id, member_name, member_code))
-        
         conn.commit()
         conn.close()
-        
         return {'success': True}
     except Exception as e:
         return {'success': False, 'msg': str(e)}, 500
@@ -419,22 +408,21 @@ def join_hagteugsa():
 @app.route('/api/hagteugsa/delete/<int:hagteugsa_id>', methods=['DELETE'])
 def delete_hagteugsa(hagteugsa_id):
     try:
+        # Supabase에 먼저 시도
+        if db_manager.is_connected():
+            result = db_manager.delete_hagteugsa(hagteugsa_id)
+            if result['success']:
+                return result
+        # Supabase 실패 시 SQLite 사용
         conn = sqlite3.connect('users.db')
         c = conn.cursor()
-        
-        # 멤버 먼저 삭제
         c.execute('DELETE FROM hagteugsa_members WHERE hagteugsa_id = ?', (hagteugsa_id,))
-        
-        # 학특사 삭제
         c.execute('DELETE FROM hagteugsa WHERE id = ?', (hagteugsa_id,))
-        
         if c.rowcount == 0:
             conn.close()
             return {'success': False, 'msg': '해당 학특사를 찾을 수 없습니다.'}, 404
-        
         conn.commit()
         conn.close()
-        
         return {'success': True}
     except Exception as e:
         return {'success': False, 'msg': str(e)}, 500
@@ -518,11 +506,16 @@ def get_meal_data():
 @app.route('/api/suhang/list', methods=['GET'])
 def get_suhang_list():
     try:
+        # Supabase에 먼저 시도
+        if db_manager.is_connected():
+            result = db_manager.get_suhang_list()
+            if result['success']:
+                return jsonify(result)
+        # Supabase 실패 시 SQLite 사용
         conn = sqlite3.connect('users.db')
         c = conn.cursor()
         c.execute('''SELECT id, subject, title, deadline, description, creator_name, creator_code, created_at 
                      FROM suhang ORDER BY deadline ASC''')
-        
         suhang_list = []
         for row in c.fetchall():
             suhang_list.append({
@@ -535,13 +528,11 @@ def get_suhang_list():
                 'creator_code': row[6],
                 'created_at': row[7]
             })
-        
         conn.close()
         return jsonify({
             'success': True,
             'data': suhang_list
         })
-        
     except Exception as e:
         return jsonify({
             'success': False,
@@ -559,27 +550,28 @@ def add_suhang():
         description = data.get('description')
         creator_name = data.get('creator_name')
         creator_code = data.get('creator_code')
-        
         if not all([subject, title, deadline, description, creator_name, creator_code]):
             return jsonify({
                 'success': False,
                 'msg': '모든 필드를 입력해주세요.'
             })
-        
+        # Supabase에 먼저 시도
+        if db_manager.is_connected():
+            result = db_manager.add_suhang(subject, title, deadline, description, creator_name, creator_code)
+            if result['success']:
+                return jsonify(result)
+        # Supabase 실패 시 SQLite 사용
         conn = sqlite3.connect('users.db')
         c = conn.cursor()
         c.execute('''INSERT INTO suhang (subject, title, deadline, description, creator_name, creator_code)
                      VALUES (?, ?, ?, ?, ?, ?)''',
                   (subject, title, deadline, description, creator_name, creator_code))
-        
         conn.commit()
         conn.close()
-        
         return jsonify({
             'success': True,
             'msg': '수행평가가 성공적으로 추가되었습니다.'
         })
-        
     except Exception as e:
         return jsonify({
             'success': False,
@@ -590,30 +582,31 @@ def add_suhang():
 @app.route('/api/suhang/delete/<int:suhang_id>', methods=['DELETE'])
 def delete_suhang(suhang_id):
     try:
+        # Supabase에 먼저 시도
+        if db_manager.is_connected():
+            result = db_manager.delete_suhang(suhang_id)
+            if result['success']:
+                return jsonify(result)
+        # Supabase 실패 시 SQLite 사용
         conn = sqlite3.connect('users.db')
         c = conn.cursor()
-        
         # 수행평가 존재 확인
         c.execute('SELECT creator_name, creator_code FROM suhang WHERE id = ?', (suhang_id,))
         suhang = c.fetchone()
-        
         if not suhang:
             conn.close()
             return jsonify({
                 'success': False,
                 'msg': '해당 수행평가를 찾을 수 없습니다.'
             })
-        
         # 수행평가 삭제
         c.execute('DELETE FROM suhang WHERE id = ?', (suhang_id,))
         conn.commit()
         conn.close()
-        
         return jsonify({
             'success': True,
             'msg': '수행평가가 성공적으로 삭제되었습니다.'
         })
-        
     except Exception as e:
         return jsonify({
             'success': False,

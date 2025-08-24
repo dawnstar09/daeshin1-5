@@ -4,13 +4,16 @@ import pandas as pd
 from flask import Flask, jsonify, request
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
+from database import db_manager
+from config import Config
 
 _root_dir = os.path.dirname(os.path.abspath(__file__))
 _static_folder = os.path.join(_root_dir, 'src')
 
 app = Flask(__name__, static_folder=_static_folder, static_url_path='')
+app.config.from_object(Config)
 
-# DB 초기화 함수
+# DB 초기화 함수 (SQLite용 - 기존 호환성 유지)
 def init_db():
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
@@ -108,7 +111,7 @@ def login():
         return {'success': False, 'msg': '아이디 또는 비밀번호가 올바르지 않습니다.'}, 401
     return {'success': True, 'name': row[1]}
 
-# 야자 학생 추가 API
+# 야자 학생 추가 API (Supabase 우선, 실패 시 SQLite)
 @app.route('/api/yaja/add', methods=['POST'])
 def add_yaja_student():
     try:
@@ -123,6 +126,13 @@ def add_yaja_student():
         if not all([date, periods, student_name, student_code, student_number, reason]):
             return {'success': False, 'msg': '모든 필드를 입력하세요.'}, 400
         
+        # Supabase에 먼저 시도
+        if db_manager.is_connected():
+            result = db_manager.add_yaja_student(date, periods, student_name, student_code, student_number, reason)
+            if result['success']:
+                return result
+        
+        # Supabase 실패 시 SQLite 사용
         conn = sqlite3.connect('users.db')
         c = conn.cursor()
         
@@ -140,10 +150,17 @@ def add_yaja_student():
     except Exception as e:
         return {'success': False, 'msg': str(e)}, 500
 
-# 야자 학생 목록 조회 API
+# 야자 학생 목록 조회 API (Supabase 우선, 실패 시 SQLite)
 @app.route('/api/yaja/list/<date>')
 def get_yaja_students(date):
     try:
+        # Supabase에 먼저 시도
+        if db_manager.is_connected():
+            result = db_manager.get_yaja_students(date)
+            if result['success']:
+                return result
+        
+        # Supabase 실패 시 SQLite 사용
         conn = sqlite3.connect('users.db')
         c = conn.cursor()
         
@@ -169,10 +186,17 @@ def get_yaja_students(date):
     except Exception as e:
         return {'success': False, 'msg': str(e)}, 500
 
-# 야자 학생 삭제 API
+# 야자 학생 삭제 API (Supabase 우선, 실패 시 SQLite)
 @app.route('/api/yaja/delete/<int:student_id>', methods=['DELETE'])
 def delete_yaja_student(student_id):
     try:
+        # Supabase에 먼저 시도
+        if db_manager.is_connected():
+            result = db_manager.delete_yaja_student(student_id)
+            if result['success']:
+                return result
+        
+        # Supabase 실패 시 SQLite 사용
         conn = sqlite3.connect('users.db')
         c = conn.cursor()
         
@@ -186,6 +210,82 @@ def delete_yaja_student(student_id):
         conn.close()
         
         return {'success': True}
+    except Exception as e:
+        return {'success': False, 'msg': str(e)}, 500
+
+# 야자 통계 API (새로 추가)
+@app.route('/api/yaja/statistics')
+def get_yaja_statistics():
+    try:
+        # 쿼리 파라미터에서 날짜 범위 가져오기
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        # Supabase에 먼저 시도
+        if db_manager.is_connected():
+            result = db_manager.get_yaja_statistics(start_date, end_date)
+            if result['success']:
+                return result
+        
+        # Supabase 실패 시 SQLite 사용
+        conn = sqlite3.connect('users.db')
+        c = conn.cursor()
+        
+        query = '''SELECT date, period, student_name, reason 
+                   FROM yaja_students'''
+        params = []
+        
+        if start_date:
+            query += ' WHERE date >= ?'
+            params.append(start_date)
+            if end_date:
+                query += ' AND date <= ?'
+                params.append(end_date)
+        elif end_date:
+            query += ' WHERE date <= ?'
+            params.append(end_date)
+        
+        query += ' ORDER BY date, period'
+        
+        c.execute(query, params)
+        rows = c.fetchall()
+        conn.close()
+        
+        # 통계 데이터 처리
+        stats = {
+            'total_absences': len(rows),
+            'daily_stats': {},
+            'weekly_stats': {},
+            'reason_stats': {},
+            'student_stats': {},
+            'period_stats': {1: 0, 2: 0, 3: 0}
+        }
+        
+        for row in rows:
+            date = row[0]
+            period = row[1]
+            reason = row[2]
+            student_name = row[3]
+            
+            # 일별 통계
+            if date not in stats['daily_stats']:
+                stats['daily_stats'][date] = 0
+            stats['daily_stats'][date] += 1
+            
+            # 차시별 통계
+            stats['period_stats'][period] += 1
+            
+            # 사유별 통계
+            if reason not in stats['reason_stats']:
+                stats['reason_stats'][reason] = 0
+            stats['reason_stats'][reason] += 1
+            
+            # 학생별 통계
+            if student_name not in stats['student_stats']:
+                stats['student_stats'][student_name] = 0
+            stats['student_stats'][student_name] += 1
+        
+        return {'success': True, 'data': stats}
     except Exception as e:
         return {'success': False, 'msg': str(e)}, 500
 

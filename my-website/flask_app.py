@@ -230,11 +230,9 @@ def get_yaja_statistics():
         # Supabase 실패 시 SQLite 사용
         conn = sqlite3.connect('users.db')
         c = conn.cursor()
-        
-        query = '''SELECT date, period, student_name, reason 
+        query = '''SELECT date, period, reason, student_name 
                    FROM yaja_students'''
         params = []
-        
         if start_date:
             query += ' WHERE date >= ?'
             params.append(start_date)
@@ -244,47 +242,77 @@ def get_yaja_statistics():
         elif end_date:
             query += ' WHERE date <= ?'
             params.append(end_date)
-        
         query += ' ORDER BY date, period'
-        
         c.execute(query, params)
         rows = c.fetchall()
         conn.close()
         
-        # 통계 데이터 처리
+        # 날짜+학생명 단위로 집계
         stats = {
-            'total_absences': len(rows),
-            'daily_stats': {},
+            'total_absences': 0,  # 전체 불참(날짜+학생명) 카운트
+            'daily_stats': {},    # 날짜별 불참 학생 수
             'weekly_stats': {},
             'reason_stats': {},
-            'student_stats': {},
-            'period_stats': {1: 0, 2: 0, 3: 0}
+            'student_stats': {},  # 학생별 불참(날짜 단위) 카운트
+            'period_stats': {1: 0, 2: 0, 3: 0},
+            'student_details': {}
         }
-        
+        # (date, student_name) -> {'periods': set, 'reasons': [사유목록]}
+        day_student_map = {}
         for row in rows:
             date = row[0]
             period = row[1]
             reason = row[2]
             student_name = row[3]
-            
-            # 일별 통계
-            if date not in stats['daily_stats']:
-                stats['daily_stats'][date] = 0
-            stats['daily_stats'][date] += 1
-            
-            # 차시별 통계
+            key = (date, student_name)
+            if key not in day_student_map:
+                day_student_map[key] = {'periods': set(), 'reasons': []}
+            day_student_map[key]['periods'].add(period)
+            day_student_map[key]['reasons'].append(reason)
+            # 차시별 통계(전체)
             stats['period_stats'][period] += 1
-            
-            # 사유별 통계
-            if reason not in stats['reason_stats']:
-                stats['reason_stats'][reason] = 0
-            stats['reason_stats'][reason] += 1
-            
-            # 학생별 통계
+        # 날짜별 학생 집합, 학생별 날짜 집합, 사유 집계
+        daily_unique_students = {}
+        for (date, student_name), info in day_student_map.items():
+            # 날짜별 유니크 학생
+            if date not in daily_unique_students:
+                daily_unique_students[date] = set()
+            daily_unique_students[date].add(student_name)
+            # 학생별 날짜 카운트
             if student_name not in stats['student_stats']:
                 stats['student_stats'][student_name] = 0
             stats['student_stats'][student_name] += 1
-        
+            # 학생별 상세 통계
+            if student_name not in stats['student_details']:
+                stats['student_details'][student_name] = {
+                    'total': 0,
+                    'periods': {1: 0, 2: 0, 3: 0},
+                    'reasons': {}
+                }
+            stats['student_details'][student_name]['total'] += 1
+            for p in info['periods']:
+                stats['student_details'][student_name]['periods'][p] += 1
+            # 대표 사유(가장 많이 나온 사유)
+            from collections import Counter
+            reason_counter = Counter(info['reasons'])
+            top_reason = reason_counter.most_common(1)[0][0] if reason_counter else '-'
+            if top_reason not in stats['student_details'][student_name]['reasons']:
+                stats['student_details'][student_name]['reasons'][top_reason] = 0
+            stats['student_details'][student_name]['reasons'][top_reason] += 1
+            # 전체 사유 통계
+            for r in set(info['reasons']):
+                if r not in stats['reason_stats']:
+                    stats['reason_stats'][r] = 0
+                stats['reason_stats'][r] += 1
+        # 일별 통계(불참 학생 수)
+        for date, students in daily_unique_students.items():
+            stats['daily_stats'][date] = len(students)
+        # 전체 불참(날짜+학생명) 카운트
+        stats['total_absences'] = sum(len(students) for students in daily_unique_students.values())
+        # 일평균 불참: 날짜별 유니크 학생 수의 합 / 날짜 수
+        stats['daily_unique_students'] = {d: list(s) for d, s in daily_unique_students.items()}
+        stats['unique_absence_sum'] = sum(len(s) for s in daily_unique_students.values())
+        stats['unique_absence_avg'] = round(stats['unique_absence_sum'] / len(daily_unique_students), 2) if daily_unique_students else 0
         return {'success': True, 'data': stats}
     except Exception as e:
         return {'success': False, 'msg': str(e)}, 500

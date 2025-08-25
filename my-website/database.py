@@ -303,33 +303,43 @@ class DatabaseManager:
                 'weekly_stats': {},
                 'reason_stats': {},
                 'student_stats': {},
-                'period_stats': {1: 0, 2: 0, 3: 0}
+                'period_stats': {1: 0, 2: 0, 3: 0},
+                'student_details': {}
             }
-            
             for row in response.data:
                 date = row['date']
                 period = row['period']
                 reason = row['reason']
                 student_name = row['student_name']
-                
                 # 일별 통계
                 if date not in stats['daily_stats']:
                     stats['daily_stats'][date] = 0
                 stats['daily_stats'][date] += 1
-                
                 # 차시별 통계
                 stats['period_stats'][period] += 1
-                
                 # 사유별 통계
                 if reason not in stats['reason_stats']:
                     stats['reason_stats'][reason] = 0
                 stats['reason_stats'][reason] += 1
-                
                 # 학생별 통계
                 if student_name not in stats['student_stats']:
                     stats['student_stats'][student_name] = 0
                 stats['student_stats'][student_name] += 1
-            
+                # 학생별 상세 통계
+                if student_name not in stats['student_details']:
+                    stats['student_details'][student_name] = {
+                        'total': 0,
+                        'periods': {1: 0, 2: 0, 3: 0},
+                        'reasons': {}
+                    }
+                stats['student_details'][student_name]['total'] += 1
+                if period in stats['student_details'][student_name]['periods']:
+                    stats['student_details'][student_name]['periods'][period] += 1
+                else:
+                    stats['student_details'][student_name]['periods'][period] = 1
+                if reason not in stats['student_details'][student_name]['reasons']:
+                    stats['student_details'][student_name]['reasons'][reason] = 0
+                stats['student_details'][student_name]['reasons'][reason] += 1
             return {'success': True, 'data': stats}
         except Exception as e:
             logger.error(f"야자 통계 조회 실패: {e}")

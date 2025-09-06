@@ -545,7 +545,7 @@ def process_meal_data():
         api_key = "99fa174825f445738a1daa51aa2ccefb"  # 실제 API 키로 교체 필요
         
         # API 키가 설정되지 않은 경우에만 CSV 파일 사용
-        if api_key == "YOUR_API_KEY_HERE" or not api_key:
+        if api_key == "99fa174825f445738a1daa51aa2ccefb" or not api_key:
             return fallback_csv_meal_data()
             
         base_url = "https://open.neis.go.kr/hub/mealServiceDietInfo"

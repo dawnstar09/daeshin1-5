@@ -459,79 +459,192 @@ def delete_hagteugsa(hagteugsa_id):
 def index():
     return app.send_static_file('index.html')
 
+# CSV 파일을 사용하는 fallback 함수
+def fallback_csv_meal_data():
+    try:
+        # CSV 파일 경로
+        csv_path = os.path.join(_static_folder, 'food_calender.csv')
+        
+        if not os.path.exists(csv_path):
+            return {'success': False, 'error': 'CSV 파일을 찾을 수 없습니다.'}
+        
+        # CSV 파일 읽기
+        df = pd.read_csv(csv_path, encoding='utf-8')
+        
+        # 현재 날짜를 기준으로 이번 주 월~금 계산
+        today = datetime.now()
+        # 이번 주 월요일 찾기 (weekday(): 월요일=0, 일요일=6)
+        week_start = today - timedelta(days=today.weekday())
+        week_end = week_start + timedelta(days=4)  # 금요일까지
+        
+        # 날짜 형식 변환 및 필터링
+        df['급식일자'] = pd.to_datetime(df['급식일자'], format='%Y%m%d')
+        week_data = df[(df['급식일자'] >= week_start) & (df['급식일자'] <= week_end)]
+        
+        # 중식만 필터링 (식사코드 2)
+        lunch_data = week_data[week_data['식사코드'] == 2].copy()
+        
+        # 요일별 데이터 정리
+        weekdays = ['월', '화', '수', '목', '금']
+        meal_list = []
+        
+        for i, day in enumerate(weekdays):
+            day_date = week_start + timedelta(days=i)
+            day_data = lunch_data[lunch_data['급식일자'].dt.date == day_date.date()]
+            
+            if not day_data.empty:
+                row = day_data.iloc[0]
+                # 메뉴 처리 (HTML 태그 제거 및 알레르기 정보 제거)
+                menu_raw = str(row['요리명'])
+                menu_items = []
+                for item in menu_raw.replace('<br/>', '\n').split('\n'):
+                    if item.strip():
+                        # 괄호 안의 숫자(알레르기 정보) 제거
+                        import re
+                        clean_item = re.sub(r'\s*\([0-9.,\s]+\)', '', item.strip())
+                        if clean_item:
+                            menu_items.append(clean_item)
+                
+                # 칼로리 정보 처리
+                calories_raw = str(row['칼로리정보']) if pd.notna(row['칼로리정보']) else ''
+                if calories_raw and calories_raw != 'nan':
+                    calories = calories_raw
+                else:
+                    calories = '칼로리 정보 없음'
+                
+                meal_list.append({
+                    'day': day,
+                    'date': day_date.strftime('%m/%d'),
+                    'menu': menu_items,
+                    'calories': calories,
+                    'isToday': day_date.date() == today.date()
+                })
+            else:
+                # 데이터가 없는 경우
+                meal_list.append({
+                    'day': day,
+                    'date': day_date.strftime('%m/%d'),
+                    'menu': ['급식 정보가 없습니다.'],
+                    'calories': '',
+                    'isToday': day_date.date() == today.date()
+                })
+        
+        return {'success': True, 'data': meal_list}
+    
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+# 급식 데이터 처리 함수 (NEIS API 사용)
+def process_meal_data():
+    try:
+        import requests
+        from urllib.parse import quote
+        
+        # 나이스 API 설정 (대전대신고등학교)
+        # API 키를 여기에 입력하세요 - https://open.neis.go.kr/portal/myPage/actKeyPage.do 에서 발급
+        api_key = "99fa174825f445738a1daa51aa2ccefb"  # 실제 API 키로 교체 필요
+        
+        # API 키가 설정되지 않은 경우에만 CSV 파일 사용
+        if api_key == "YOUR_API_KEY_HERE" or not api_key:
+            return fallback_csv_meal_data()
+            
+        base_url = "https://open.neis.go.kr/hub/mealServiceDietInfo"
+        
+        # 현재 날짜 기준으로 이번 주 데이터 
+        today = datetime.now()
+        week_start = today - timedelta(days=today.weekday())
+        
+        # 요일별 데이터 정리
+        weekdays = ['월', '화', '수', '목', '금']
+        meal_list = []
+        
+        for i, day in enumerate(weekdays):
+            day_date = week_start + timedelta(days=i)
+            
+            # API 파라미터
+            params = {
+                'Key': api_key,
+                'Type': 'json',
+                'pIndex': 1,
+                'pSize': 100,
+                'ATPT_OFCDC_SC_CODE': 'G10',  # 대전광역시교육청
+                'SD_SCHUL_CODE': '7430048',    # 대전대신고등학교
+                'MLSV_YMD': day_date.strftime('%Y%m%d'),
+                'MMEAL_SC_CODE': '2'  # 중식
+            }
+            
+            try:
+                response = requests.get(base_url, params=params, timeout=5)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    
+                    if 'mealServiceDietInfo' in data and len(data['mealServiceDietInfo']) > 1:
+                        meal_info = data['mealServiceDietInfo'][1]['row'][0]
+                        
+                        # 메뉴 처리 (알레르기 정보 제거)
+                        menu_raw = meal_info.get('DDISH_NM', '')
+                        menu_items = []
+                        
+                        for item in menu_raw.replace('<br/>', '\n').split('\n'):
+                            if item.strip():
+                                import re
+                                # 괄호 안의 숫자(알레르기 정보) 제거
+                                clean_item = re.sub(r'\s*\([0-9.,\s]+\)', '', item.strip())
+                                if clean_item:
+                                    menu_items.append(clean_item)
+                        
+                        # 칼로리 정보
+                        calories = meal_info.get('CAL_INFO', '칼로리 정보 없음')
+                        
+                        meal_list.append({
+                            'day': day,
+                            'date': day_date.strftime('%m/%d'),
+                            'menu': menu_items,
+                            'calories': calories,
+                            'isToday': day_date.date() == today.date()
+                        })
+                    else:
+                        # API에서 데이터를 찾을 수 없는 경우
+                        meal_list.append({
+                            'day': day,
+                            'date': day_date.strftime('%m/%d'),
+                            'menu': ['급식 정보가 없습니다.'],
+                            'calories': '',
+                            'isToday': day_date.date() == today.date()
+                        })
+                else:
+                    # API 요청 실패
+                    meal_list.append({
+                        'day': day,
+                        'date': day_date.strftime('%m/%d'),
+                        'menu': ['급식 정보를 가져올 수 없습니다.'],
+                        'calories': '',
+                        'isToday': day_date.date() == today.date()
+                    })
+            except requests.RequestException:
+                # 네트워크 오류
+                meal_list.append({
+                    'day': day,
+                    'date': day_date.strftime('%m/%d'),
+                    'menu': ['네트워크 오류로 급식 정보를 가져올 수 없습니다.'],
+                    'calories': '',
+                    'isToday': day_date.date() == today.date()
+                })
+        
+        return {'success': True, 'data': meal_list}
+    
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+# 급식 데이터 API 엔드포인트
 @app.route('/api/meal')
 def get_meal_data():
-    try:
-        # CSV 파일 읽기
-        csv_file = os.path.join(_root_dir, 'food_calender.csv')
-        df = pd.read_csv(csv_file, encoding='utf-8')
-        
-        # 오늘 날짜 기준으로 이번 주 월요일 찾기
-        today = datetime.now()
-        monday = today - timedelta(days=today.weekday())
-        
-        # 이번 주 날짜들 생성 (월~금)
-        week_dates = []
-        for i in range(5):
-            date = monday + timedelta(days=i)
-            week_dates.append(date.strftime('%Y%m%d'))
-        
-        # 급식 데이터 필터링 및 파싱
-        meal_data = []
-        for i, date_str in enumerate(week_dates):
-            date_obj = datetime.strptime(date_str, '%Y%m%d')
-            day_names = ['월', '화', '수', '목', '금']
-            day_name = day_names[i]
-            
-            # 해당 날짜의 급식 데이터 찾기
-            day_meal = df[df['급식일자'] == int(date_str)]
-            
-            if not day_meal.empty:
-                # 요리명에서 메뉴 추출 (HTML 태그 제거)
-                menu_text = day_meal.iloc[0]['요리명']
-                # <br/> 태그를 기준으로 분리하고 알레르기 정보 제거
-                menu_items = []
-                for item in menu_text.split('<br/>'):
-                    # 괄호 안의 알레르기 정보 제거
-                    clean_item = item.split('(')[0].strip()
-                    if clean_item:
-                        menu_items.append(clean_item)
-                
-                # 칼로리 정보 추출
-                calories = day_meal.iloc[0]['칼로리정보']
-                calories_num = f"{calories.split(' ')[0]}kcal" if pd.notna(calories) else '칼로리: 정보없음'
-            else:
-                # 데이터가 없는 경우 기본 메뉴
-                menu_items = ['급식 정보가 없습니다']
-                calories_num = '칼로리: 정보없음'
+    result = process_meal_data()
+    return jsonify(result)
 
-            # 오늘인지 확인
-            is_today = date_obj.date() == today.date()
-            
-            meal_data.append({
-                'date': date_obj.strftime('%Y-%m-%d'),
-                'day': f'{day_name}요일',
-                'menu': menu_items,
-                'calories': calories_num,
-                'isToday': is_today
-            })
-        
-        return jsonify({
-            'success': True,
-            'data': meal_data,
-            'message': f'이번 주 급식 정보 ({monday.strftime("%m월 %d일")} ~ {(monday + timedelta(days=4)).strftime("%m월 %d일")})'
-        })
-        
-    except Exception as e:
-        print(f"급식 데이터 오류: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'message': '급식 데이터를 불러오는데 실패했습니다.'
-        })
-
-# 수행평가 목록 조회 API
-@app.route('/api/suhang/list', methods=['GET'])
+# 학특사 목록 조회 API (Supabase 우선, 실패 시 SQLite)
+@app.route('/api/hagteugsa/list', methods=['GET'])
 def get_suhang_list():
     try:
         # Supabase에 먼저 시도

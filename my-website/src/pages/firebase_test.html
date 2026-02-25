@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Firebase 테스트 페이지 - 야자 통계</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+
+        .status.connected {
+            background: #48bb78;
+            color: white;
+        }
+
+        .status.disconnected {
+            background: #f56565;
+            color: white;
+        }
+
+        .status.loading {
+            background: #edf2f7;
+            color: #4a5568;
+        }
+
+        .section {
+            background: #f7fafc;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+        }
+
+        .section h2 {
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            color: #2d3748;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.95rem;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+
+        .btn-success {
+            background: #48bb78;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #38a169;
+            transform: translateY(-2px);
+        }
+
+        .btn-danger {
+            background: #f56565;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #e53e3e;
+            transform: translateY(-2px);
+        }
+
+        .data-display {
+            background: #2d3748;
+            color: #e2e8f0;
+            border-radius: 8px;
+            padding: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            max-height: 400px;
+            overflow-y: auto;
+            line-height: 1.6;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #4a5568;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .log {
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 15px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+        }
+
+        .log-entry {
+            padding: 5px 0;
+            border-bottom: 1px solid #f7fafc;
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .log-success {
+            color: #48bb78;
+        }
+
+        .log-error {
+            color: #f56565;
+        }
+
+        .log-info {
+            color: #4299e1;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            border: 2px solid #e2e8f0;
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            color: #718096;
+            font-size: 0.9rem;
+        }
+    </style>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔥 Firebase 테스트 페이지</h1>
+            <p>야자 통계 시스템 - 실시간 데이터베이스 테스트</p>
+        </div>
+
+        <div class="content">
+            <!-- 연결 상태 -->
+            <div class="section">
+                <h2>📡 연결 상태</h2>
+                <div id="connectionStatus" class="status loading">연결 확인 중...</div>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-number" id="totalRecords">-</div>
+                        <div class="stat-label">총 레코드</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="uniqueStudents">-</div>
+                        <div class="stat-label">학생 수</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="uniqueDates">-</div>
+                        <div class="stat-label">날짜 수</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 데이터 추가 -->
+            <div class="section">
+                <h2>➕ 테스트 데이터 추가</h2>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>날짜</label>
+                        <input type="date" id="inputDate" value="">
+                    </div>
+                    <div class="form-group">
+                        <label>차시</label>
+                        <select id="inputPeriod">
+                            <option value="1">1차시</option>
+                            <option value="2">2차시</option>
+                            <option value="3">3차시</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>학생명</label>
+                        <input type="text" id="inputStudentName" placeholder="홍길동">
+                    </div>
+                    <div class="form-group">
+                        <label>학생 코드</label>
+                        <input type="text" id="inputStudentCode" placeholder="10101">
+                    </div>
+                    <div class="form-group">
+                        <label>번호</label>
+                        <input type="text" id="inputStudentNumber" placeholder="1">
+                    </div>
+                    <div class="form-group">
+                        <label>사유</label>
+                        <select id="inputReason">
+                            <option value="병원">병원</option>
+                            <option value="학원">학원</option>
+                            <option value="가족행사">가족행사</option>
+                            <option value="기타">기타</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="button-group">
+                    <button class="btn btn-primary" onclick="addData()">데이터 추가</button>
+                    <button class="btn btn-success" onclick="addSampleData()">샘플 데이터 추가 (5개)</button>
+                </div>
+            </div>
+
+            <!-- 데이터 조회 -->
+            <div class="section">
+                <h2>📊 데이터 조회</h2>
+                <div class="button-group">
+                    <button class="btn btn-primary" onclick="loadAllData()">전체 데이터 조회</button>
+                    <button class="btn btn-success" onclick="loadStatistics()">통계 페이지 열기</button>
+                    <button class="btn btn-danger" onclick="clearAllData()">⚠️ 모든 데이터 삭제</button>
+                </div>
+                <div id="dataDisplay" class="data-display">데이터를 조회하려면 위 버튼을 클릭하세요.</div>
+            </div>
+
+            <!-- 로그 -->
+            <div class="section">
+                <h2>📝 활동 로그</h2>
+                <div id="logDisplay" class="log">
+                    <div class="log-entry log-info">페이지가 로드되었습니다.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase 설정 로드 -->
+    <script src="../scripts/firebase-config.local.js"></script>
+    <script src="../scripts/firebase-config.js"></script>
+
+    <script>
+        let database, yajaRef;
+
+        // Firebase 초기화 (firebase-config.js에서 이미 초기화됨)
+        try {
+            database = firebase.database();
+            yajaRef = database.ref('yaja_students');
+            
+            logMessage('Firebase 초기화 성공', 'success');
+            
+            // 연결 상태 모니터링
+            const connectedRef = database.ref('.info/connected');
+            connectedRef.on('value', (snap) => {
+                const statusEl = document.getElementById('connectionStatus');
+                if (snap.val() === true) {
+                    statusEl.className = 'status connected';
+                    statusEl.textContent = '✅ Firebase에 연결됨';
+                    logMessage('Firebase에 연결되었습니다.', 'success');
+                    updateStats();
+                } else {
+                    statusEl.className = 'status disconnected';
+                    statusEl.textContent = '❌ Firebase 연결 끊김';
+                    logMessage('Firebase 연결이 끊어졌습니다.', 'error');
+                }
+            });
+
+            // 데이터 변경 감지
+            yajaRef.on('value', (snapshot) => {
+                updateStats();
+                logMessage('데이터가 업데이트되었습니다.', 'info');
+            });
+
+        } catch (error) {
+            logMessage('Firebase 초기화 실패: ' + error.message, 'error');
+            document.getElementById('connectionStatus').className = 'status disconnected';
+            document.getElementById('connectionStatus').textContent = '❌ 설정 오류';
+        }
+
+        // 오늘 날짜 설정
+        document.getElementById('inputDate').valueAsDate = new Date();
+
+        // 로그 메시지 추가
+        function logMessage(message, type = 'info') {
+            const logDisplay = document.getElementById('logDisplay');
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${timestamp}] ${message}`;
+            logDisplay.insertBefore(entry, logDisplay.firstChild);
+            
+            // 최대 50개 로그만 유지
+            while (logDisplay.children.length > 50) {
+                logDisplay.removeChild(logDisplay.lastChild);
+            }
+        }
+
+        // 통계 업데이트
+        async function updateStats() {
+            try {
+                const snapshot = await yajaRef.once('value');
+                const data = snapshot.val();
+                
+                if (data) {
+                    const records = Object.values(data);
+                    const students = new Set(records.map(r => r.student_name));
+                    const dates = new Set(records.map(r => r.date));
+                    
+                    document.getElementById('totalRecords').textContent = records.length;
+                    document.getElementById('uniqueStudents').textContent = students.size;
+                    document.getElementById('uniqueDates').textContent = dates.size;
+                } else {
+                    document.getElementById('totalRecords').textContent = 0;
+                    document.getElementById('uniqueStudents').textContent = 0;
+                    document.getElementById('uniqueDates').textContent = 0;
+                }
+            } catch (error) {
+                logMessage('통계 업데이트 실패: ' + error.message, 'error');
+            }
+        }
+
+        // 데이터 추가
+        async function addData() {
+            const data = {
+                date: document.getElementById('inputDate').value,
+                period: parseInt(document.getElementById('inputPeriod').value),
+                student_name: document.getElementById('inputStudentName').value,
+                student_code: document.getElementById('inputStudentCode').value,
+                student_number: document.getElementById('inputStudentNumber').value,
+                reason: document.getElementById('inputReason').value,
+                created_at: new Date().toISOString()
+            };
+
+            if (!data.date || !data.student_name || !data.student_code) {
+                alert('날짜, 학생명, 학생 코드는 필수입니다.');
+                return;
+            }
+
+            try {
+                await yajaRef.push(data);
+                logMessage(`데이터 추가: ${data.student_name} (${data.date})`, 'success');
+                alert('데이터가 추가되었습니다!');
+            } catch (error) {
+                logMessage('데이터 추가 실패: ' + error.message, 'error');
+                alert('데이터 추가 실패: ' + error.message);
+            }
+        }
+
+        // 샘플 데이터 추가
+        async function addSampleData() {
+            const today = new Date();
+            const samples = [
+                { name: '홍길동', code: '10101', number: '1', reason: '병원' },
+                { name: '김철수', code: '10102', number: '2', reason: '학원' },
+                { name: '이영희', code: '10103', number: '3', reason: '가족행사' },
+                { name: '박민수', code: '10104', number: '4', reason: '병원' },
+                { name: '최지은', code: '10105', number: '5', reason: '기타' }
+            ];
+
+            try {
+                for (const sample of samples) {
+                    await yajaRef.push({
+                        date: today.toISOString().split('T')[0],
+                        period: Math.floor(Math.random() * 3) + 1,
+                        student_name: sample.name,
+                        student_code: sample.code,
+                        student_number: sample.number,
+                        reason: sample.reason,
+                        created_at: new Date().toISOString()
+                    });
+                }
+                logMessage(`샘플 데이터 ${samples.length}개 추가 완료`, 'success');
+                alert('샘플 데이터가 추가되었습니다!');
+            } catch (error) {
+                logMessage('샘플 데이터 추가 실패: ' + error.message, 'error');
+                alert('샘플 데이터 추가 실패: ' + error.message);
+            }
+        }
+
+        // 전체 데이터 조회
+        async function loadAllData() {
+            try {
+                const snapshot = await yajaRef.once('value');
+                const data = snapshot.val();
+                
+                const display = document.getElementById('dataDisplay');
+                if (data) {
+                    display.textContent = JSON.stringify(data, null, 2);
+                    logMessage('전체 데이터 조회 완료', 'success');
+                } else {
+                    display.textContent = '데이터가 없습니다.';
+                    logMessage('조회할 데이터가 없습니다.', 'info');
+                }
+            } catch (error) {
+                logMessage('데이터 조회 실패: ' + error.message, 'error');
+            }
+        }
+
+        // 통계 페이지 열기
+        function loadStatistics() {
+            window.open('yaja_statistics.html', '_blank');
+        }
+
+        // 모든 데이터 삭제
+        async function clearAllData() {
+            if (!confirm('⚠️ 경고: 모든 데이터가 삭제됩니다. 계속하시겠습니까?')) {
+                return;
+            }
+
+            if (!confirm('정말로 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
+                return;
+            }
+
+            try {
+                await yajaRef.remove();
+                logMessage('모든 데이터 삭제 완료', 'success');
+                alert('모든 데이터가 삭제되었습니다.');
+                document.getElementById('dataDisplay').textContent = '데이터가 없습니다.';
+            } catch (error) {
+                logMessage('데이터 삭제 실패: ' + error.message, 'error');
+                alert('데이터 삭제 실패: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>

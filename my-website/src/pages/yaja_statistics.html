@@ -3,9 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>야자 통계 - 대신고 1-5</title>
+    <title>야자 통계 - 대신고 2-4</title>
     <link rel="stylesheet" href="../styles/main.css">
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    
+    <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
     <style>
         * {
             margin: 0;
@@ -394,6 +401,16 @@
                 <div class="stat-number" id="topReason">-</div>
                 <div class="stat-label">빈도 기준</div>
             </div>
+            <div class="stat-card">
+                <h3>📅 주평균 불참</h3>
+                <div class="stat-number" id="weeklyAvg">-</div>
+                <div class="stat-label">주당 평균</div>
+            </div>
+            <div class="stat-card">
+                <h3>📆 월평균 불참</h3>
+                <div class="stat-number" id="monthlyAvg">-</div>
+                <div class="stat-label">월당 평균</div>
+            </div>
         </div>
 
         <!-- 차트들 -->
@@ -425,9 +442,11 @@
                 <thead>
                     <tr>
                         <th>학생명</th>
+                        <th>총 불참</th>
+                        <th>주별 평균</th>
+                        <th>월별 평균</th>
                         <th>주요 사유</th>
-                        <th>사유 전체</th>
-                        <th>총 불참 횟수</th>
+                        <th>사유별 상세</th>
                         <th>1차시</th>
                         <th>2차시</th>
                         <th>3차시</th>
@@ -435,7 +454,7 @@
                 </thead>
                 <tbody id="studentTableBody">
                     <tr>
-                        <td colspan="6" class="loading">데이터를 불러오는 중...</td>
+                        <td colspan="9" class="loading">데이터를 불러오는 중...</td>
                     </tr>
                 </tbody>
             </table>
@@ -444,18 +463,41 @@
 
     <a href="../index.html" class="home-btn">🏠 홈으로</a>
 
+    <!-- Firebase 설정 스크립트 (순서 중요!) -->
+    <script src="../scripts/firebase-config.local.js"></script>
+    <script src="../scripts/firebase-config.js"></script>
+
     <script>
         let dailyChart, periodChart, reasonChart;
         let currentStats = null;
+        let yajaDataListener = null;
 
         // 페이지 로드 시 초기화
         document.addEventListener('DOMContentLoaded', function() {
             updateDateTime();
             setThisWeek();
             loadStatistics();
+            setupRealtimeListener();
             
             // 매분마다 시간 업데이트
             setInterval(updateDateTime, 60000);
+        });
+
+        // Firebase 실시간 리스너 설정
+        function setupRealtimeListener() {
+            if (typeof yajaRef !== 'undefined') {
+                yajaDataListener = yajaRef.on('value', (snapshot) => {
+                    console.log('🔄 Firebase 데이터 업데이트 감지');
+                    loadStatistics();
+                });
+            }
+        }
+
+        // 페이지 종료 시 리스너 제거
+        window.addEventListener('beforeunload', () => {
+            if (yajaDataListener && typeof yajaRef !== 'undefined') {
+                yajaRef.off('value', yajaDataListener);
+            }
         });
 
         // 날짜 및 시간 정보 업데이트
@@ -515,7 +557,7 @@
             return `${year}-${month}-${day}`;
         }
 
-        // 통계 데이터 로드
+        // 통계 데이터 로드 (Firebase에서 직접 가져오기)
         async function loadStatistics() {
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
@@ -527,23 +569,212 @@
             
             try {
                 // 로딩 상태 표시
-                document.getElementById('studentTableBody').innerHTML = '<tr><td colspan="6" class="loading">데이터를 불러오는 중...</td></tr>';
+                document.getElementById('studentTableBody').innerHTML = '<tr><td colspan="9" class="loading">데이터를 불러오는 중...</td></tr>';
                 
-                const response = await fetch(`/api/yaja/statistics?start_date=${startDate}&end_date=${endDate}`);
-                const result = await response.json();
-                
-                if (result.success) {
-                    currentStats = result.data;
+                // Firebase에서 데이터 가져오기
+                if (typeof yajaRef !== 'undefined') {
+                    const snapshot = await yajaRef.once('value');
+                    const allData = snapshot.val();
+                    
+                    if (!allData) {
+                        currentStats = calculateStats([]);
+                        updateSummaryStats();
+                        updateCharts();
+                        updateStudentTable();
+                        return;
+                    }
+                    
+                    // 날짜 범위로 필터링
+                    const filteredData = Object.values(allData).filter(record => {
+                        return record.date >= startDate && record.date <= endDate;
+                    });
+                    
+                    // 통계 계산
+                    currentStats = calculateStats(filteredData, startDate, endDate);
                     updateSummaryStats();
                     updateCharts();
                     updateStudentTable();
                 } else {
-                    throw new Error(result.msg || '통계 데이터를 불러오는데 실패했습니다.');
+                    // Firebase가 설정되지 않은 경우 백엔드 API 사용
+                    const response = await fetch(`/api/yaja/statistics?start_date=${startDate}&end_date=${endDate}`);
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        currentStats = result.data;
+                        updateSummaryStats();
+                        updateCharts();
+                        updateStudentTable();
+                    } else {
+                        throw new Error(result.msg || '통계 데이터를 불러오는데 실패했습니다.');
+                    }
                 }
             } catch (error) {
                 console.error('통계 로드 오류:', error);
-                document.getElementById('studentTableBody').innerHTML = `<tr><td colspan="6" class="error">오류: ${error.message}</td></tr>`;
+                document.getElementById('studentTableBody').innerHTML = `<tr><td colspan="9" class="error">오류: ${error.message}</td></tr>`;
             }
+        }
+
+        // 통계 계산 함수
+        function calculateStats(records, startDate, endDate) {
+            const stats = {
+                total_absences: 0,
+                daily_stats: {},
+                weekly_stats: {},
+                monthly_stats: {},
+                reason_stats: {},
+                student_stats: {},
+                period_stats: {1: 0, 2: 0, 3: 0},
+                student_details: {}
+            };
+            
+            // 날짜+학생명 단위로 집계
+            const dayStudentMap = {};
+            
+            records.forEach(record => {
+                const date = record.date;
+                const period = record.period;
+                const reason = record.reason;
+                const studentName = record.student_name;
+                
+                const key = `${date}_${studentName}`;
+                
+                if (!dayStudentMap[key]) {
+                    dayStudentMap[key] = {
+                        date: date,
+                        studentName: studentName,
+                        periods: new Set(),
+                        reasons: []
+                    };
+                }
+                
+                dayStudentMap[key].periods.add(period);
+                dayStudentMap[key].reasons.push(reason);
+                
+                // 차시별 통계
+                stats.period_stats[period] = (stats.period_stats[period] || 0) + 1;
+            });
+            
+            // 날짜별, 주별, 월별 집계
+            const dailyUniqueStudents = {};
+            const weeklyUniqueStudents = {};
+            const monthlyUniqueStudents = {};
+            
+            Object.values(dayStudentMap).forEach(entry => {
+                const date = entry.date;
+                const studentName = entry.studentName;
+                
+                // 날짜별 유니크 학생
+                if (!dailyUniqueStudents[date]) {
+                    dailyUniqueStudents[date] = new Set();
+                }
+                dailyUniqueStudents[date].add(studentName);
+                
+                // 주별 집계 (ISO week)
+                const weekKey = getWeekKey(date);
+                if (!weeklyUniqueStudents[weekKey]) {
+                    weeklyUniqueStudents[weekKey] = {};
+                }
+                if (!weeklyUniqueStudents[weekKey][studentName]) {
+                    weeklyUniqueStudents[weekKey][studentName] = 0;
+                }
+                weeklyUniqueStudents[weekKey][studentName]++;
+                
+                // 월별 집계
+                const monthKey = date.substring(0, 7); // YYYY-MM
+                if (!monthlyUniqueStudents[monthKey]) {
+                    monthlyUniqueStudents[monthKey] = {};
+                }
+                if (!monthlyUniqueStudents[monthKey][studentName]) {
+                    monthlyUniqueStudents[monthKey][studentName] = 0;
+                }
+                monthlyUniqueStudents[monthKey][studentName]++;
+                
+                // 학생별 통계
+                if (!stats.student_stats[studentName]) {
+                    stats.student_stats[studentName] = 0;
+                }
+                stats.student_stats[studentName]++;
+                
+                // 학생별 상세 통계
+                if (!stats.student_details[studentName]) {
+                    stats.student_details[studentName] = {
+                        total: 0,
+                        periods: {1: 0, 2: 0, 3: 0},
+                        reasons: {},
+                        weeks: {},
+                        months: {}
+                    };
+                }
+                
+                stats.student_details[studentName].total++;
+                
+                // 차시별
+                entry.periods.forEach(p => {
+                    stats.student_details[studentName].periods[p]++;
+                });
+                
+                // 사유별
+                const reasonCounter = {};
+                entry.reasons.forEach(r => {
+                    reasonCounter[r] = (reasonCounter[r] || 0) + 1;
+                    stats.student_details[studentName].reasons[r] = 
+                        (stats.student_details[studentName].reasons[r] || 0) + 1;
+                });
+                
+                // 주별
+                if (!stats.student_details[studentName].weeks[weekKey]) {
+                    stats.student_details[studentName].weeks[weekKey] = 0;
+                }
+                stats.student_details[studentName].weeks[weekKey]++;
+                
+                // 월별
+                if (!stats.student_details[studentName].months[monthKey]) {
+                    stats.student_details[studentName].months[monthKey] = 0;
+                }
+                stats.student_details[studentName].months[monthKey]++;
+                
+                // 전체 사유 통계
+                Object.keys(reasonCounter).forEach(r => {
+                    stats.reason_stats[r] = (stats.reason_stats[r] || 0) + reasonCounter[r];
+                });
+            });
+            
+            // 일별 통계
+            for (const [date, students] of Object.entries(dailyUniqueStudents)) {
+                stats.daily_stats[date] = students.size;
+            }
+            
+            // 전체 불참 횟수
+            stats.total_absences = Object.values(dailyUniqueStudents).reduce((sum, set) => sum + set.size, 0);
+            
+            // 일평균
+            const numDays = Object.keys(dailyUniqueStudents).length;
+            stats.unique_absence_avg = numDays > 0 ? (stats.total_absences / numDays).toFixed(2) : 0;
+            
+            // 주평균 계산
+            const weekCount = Object.keys(weeklyUniqueStudents).length;
+            const totalWeeklyAbsences = Object.values(weeklyUniqueStudents).reduce((sum, week) => {
+                return sum + Object.values(week).reduce((s, c) => s + c, 0);
+            }, 0);
+            stats.weekly_avg = weekCount > 0 ? (totalWeeklyAbsences / weekCount).toFixed(2) : 0;
+            
+            // 월평균 계산
+            const monthCount = Object.keys(monthlyUniqueStudents).length;
+            const totalMonthlyAbsences = Object.values(monthlyUniqueStudents).reduce((sum, month) => {
+                return sum + Object.values(month).reduce((s, c) => s + c, 0);
+            }, 0);
+            stats.monthly_avg = monthCount > 0 ? (totalMonthlyAbsences / monthCount).toFixed(2) : 0;
+            
+            return stats;
+        }
+        
+        // 주차 키 생성 (ISO 8601 week)
+        function getWeekKey(dateStr) {
+            const date = new Date(dateStr);
+            const day = date.getDay();
+            const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+            const monday = new Date(date.setDate(diff));
+            return monday.toISOString().substring(0, 10);
         }
 
         // 요약 통계 업데이트
@@ -551,11 +782,14 @@
             if (!currentStats) return;
             
             document.getElementById('totalAbsences').textContent = currentStats.total_absences;
-            // 일평균 계산: (날짜별 유니크 학생 수의 합 / 날짜 수)
-            document.getElementById('avgAbsences').textContent = currentStats.unique_absence_avg !== undefined ? currentStats.unique_absence_avg : 0;
-            
-            // 고유 학생 수
+            document.getElementById('avgAbsences').textContent = currentStats.unique_absence_avg || 0;
             document.getElementById('uniqueStudents').textContent = Object.keys(currentStats.student_stats).length;
+            
+            // 주평균
+            document.getElementById('weeklyAvg').textContent = currentStats.weekly_avg || 0;
+            
+            // 월평균
+            document.getElementById('monthlyAvg').textContent = currentStats.monthly_avg || 0;
             
             // 가장 많은 사유
             let topReason = '없음';
@@ -721,23 +955,39 @@
             const tbody = document.getElementById('studentTableBody');
             const detailsObj = currentStats.student_details || {};
             const students = Object.entries(detailsObj);
+            
             if (students.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" class="loading">해당 기간에 불참 데이터가 없습니다.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" class="loading">해당 기간에 불참 데이터가 없습니다.</td></tr>';
                 return;
             }
+            
             tbody.innerHTML = students
                 .sort(([, a], [, b]) => b.total - a.total)
                 .map(([studentName, details]) => {
-                    // 사유 목록 문자열 생성
+                    // 주별 평균 계산
+                    const weekCount = Object.keys(details.weeks || {}).length;
+                    const weeklyAvg = weekCount > 0 ? 
+                        (Object.values(details.weeks).reduce((a, b) => a + b, 0) / weekCount).toFixed(2) : 0;
+                    
+                    // 월별 평균 계산
+                    const monthCount = Object.keys(details.months || {}).length;
+                    const monthlyAvg = monthCount > 0 ? 
+                        (Object.values(details.months).reduce((a, b) => a + b, 0) / monthCount).toFixed(2) : 0;
+                    
+                    // 사유별 상세 문자열
                     const reasonsStr = Object.entries(details.reasons)
+                        .sort(([, a], [, b]) => b - a)
                         .map(([reason, cnt]) => `${reason}(${cnt})`)
                         .join(', ');
+                    
                     return `
                         <tr>
                             <td><strong>${studentName}</strong></td>
-                            <td>${getTopReason(details.reasons)}</td>
-                            <td>${reasonsStr}</td>
                             <td>${details.total}</td>
+                            <td>${weeklyAvg}</td>
+                            <td>${monthlyAvg}</td>
+                            <td><span class="reason-badge">${getTopReason(details.reasons)}</span></td>
+                            <td>${reasonsStr}</td>
                             <td>${details.periods[1] || 0}</td>
                             <td>${details.periods[2] || 0}</td>
                             <td>${details.periods[3] || 0}</td>
